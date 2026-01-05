@@ -1,0 +1,955 @@
+openapi: 3.0.3
+info:
+  title: Quidoris Engine Local API
+  version: 0.1.0
+  description: Local daemon HTTP API for Quidoris Engine (SQLite + FTS5 + SSE).
+servers:
+  - url: http://127.0.0.1:8787
+tags:
+  - name: Health
+  - name: Auth
+  - name: Settings
+  - name: Library
+  - name: Index
+  - name: Search
+  - name: Runs
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: quidoris_session
+    bearerAuth:
+      type: http
+      scheme: bearer
+
+  schemas:
+    OkResponse:
+      type: object
+      required: [ok]
+      properties:
+        ok: { type: boolean }
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, http_status, request_id, retryable]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            http_status: { type: integer }
+            request_id: { type: string }
+            retryable: { type: boolean }
+            details: { type: object, additionalProperties: true }
+            validation:
+              type: array
+              items:
+                type: object
+                required: [path, issue]
+                properties:
+                  path: { type: string }
+                  issue: { type: string }
+
+    HealthResponse:
+      type: object
+      required: [ok, version, uptime_ms, fts_ready]
+      properties:
+        ok: { type: boolean }
+        version: { type: string }
+        db_path: { type: string }
+        uptime_ms: { type: integer }
+        fts_ready: { type: boolean }
+
+    User:
+      type: object
+      required: [id, email, status, created_at_ms]
+      properties:
+        id: { type: string }
+        email: { type: string }
+        display_name: { type: string, nullable: true }
+        created_at_ms: { type: integer }
+        last_login_at_ms: { type: integer, nullable: true }
+        status: { type: string }
+
+    RegisterRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string }
+        password: { type: string }
+        display_name: { type: string, nullable: true }
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string }
+        password: { type: string }
+
+    SessionInfo:
+      type: object
+      required: [id, expires_at_ms]
+      properties:
+        id: { type: string }
+        expires_at_ms: { type: integer }
+
+    MeResponse:
+      type: object
+      required: [user]
+      properties:
+        user: { $ref: "#/components/schemas/User" }
+
+    LoginResponse:
+      type: object
+      required: [user, session]
+      properties:
+        user: { $ref: "#/components/schemas/User" }
+        session: { $ref: "#/components/schemas/SessionInfo" }
+
+    Settings:
+      type: object
+      properties:
+        defaults:
+          type: object
+          properties:
+            mode: { type: string, enum: [fast, balanced, thorough] }
+            strict: { type: boolean }
+            citations: { type: boolean }
+            stream: { type: boolean }
+        provider_presets:
+          type: array
+          items:
+            type: object
+            required: [name, provider, model]
+            properties:
+              name: { type: string }
+              provider: { type: string, enum: [local_cli, hf, openai_compat, custom] }
+              model: { type: string }
+              endpoint: { type: string, nullable: true }
+
+    DocumentItem:
+      type: object
+      required: [id, path, kind, bytes, mtime_ms, ingest_status, updated_at_ms, tags]
+      properties:
+        id: { type: string }
+        path: { type: string }
+        kind: { type: string, enum: [doc, image, video, audio] }
+        mime_type: { type: string, nullable: true }
+        bytes: { type: integer }
+        mtime_ms: { type: integer }
+        sha256: { type: string, nullable: true }
+        ingest_status: { type: string, enum: [pending, indexed, error] }
+        error_message: { type: string, nullable: true }
+        tags:
+          type: array
+          items: { type: string }
+        updated_at_ms: { type: integer }
+
+    DocumentsListResponse:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/DocumentItem" }
+        next_cursor: { type: string, nullable: true }
+
+    TagStat:
+      type: object
+      required: [id, name, count]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        count: { type: integer }
+
+    TagsListResponse:
+      type: object
+      required: [tags]
+      properties:
+        tags:
+          type: array
+          items: { $ref: "#/components/schemas/TagStat" }
+
+    DocumentGetResponse:
+      type: object
+      required: [document]
+      properties:
+        document:
+          allOf:
+            - $ref: "#/components/schemas/DocumentItem"
+
+    TagsUpdateResponse:
+      type: object
+      required: [document_id, tags]
+      properties:
+        document_id: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+
+    SearchRequest:
+      type: object
+      required: [query]
+      properties:
+        query: { type: string }
+        limit: { type: integer, default: 12 }
+        filters:
+          type: object
+          properties:
+            kind: { type: string, nullable: true }
+            tag: { type: string, nullable: true }
+            folder: { type: string, nullable: true }
+
+    SearchResult:
+      type: object
+      required: [chunk_id, document_id, path, rank, snippet, start_byte, end_byte]
+      properties:
+        chunk_id: { type: string }
+        document_id: { type: string }
+        path: { type: string }
+        rank: { type: number }
+        snippet: { type: string }
+        start_byte: { type: integer }
+        end_byte: { type: integer }
+
+    SearchResponse:
+      type: object
+      required: [results]
+      properties:
+        results:
+          type: array
+          items: { $ref: "#/components/schemas/SearchResult" }
+
+    ReadRequest:
+      type: object
+      required: [document_id, start_byte, end_byte]
+      properties:
+        document_id: { type: string }
+        start_byte: { type: integer }
+        end_byte: { type: integer }
+
+    ReadResponse:
+      type: object
+      required: [path, start_byte, end_byte, text]
+      properties:
+        path: { type: string }
+        start_byte: { type: integer }
+        end_byte: { type: integer }
+        text: { type: string }
+
+    IndexStatusResponse:
+      type: object
+      required: [state, queue_depth, last_scan_at_ms, last_index_at_ms]
+      properties:
+        state: { type: string, enum: [idle, scanning, indexing] }
+        queue_depth: { type: integer }
+        last_scan_at_ms: { type: integer, nullable: true }
+        last_index_at_ms: { type: integer, nullable: true }
+
+    IndexSyncRequest:
+      type: object
+      properties:
+        paths:
+          type: array
+          items: { type: string }
+        reindex_all: { type: boolean, default: false }
+
+    IndexSyncResponse:
+      type: object
+      required: [ok, discovered, queued, unchanged]
+      properties:
+        ok: { type: boolean }
+        discovered: { type: integer }
+        queued: { type: integer }
+        unchanged: { type: integer }
+
+    IndexReindexRequest:
+      type: object
+      required: [document_ids]
+      properties:
+        document_ids:
+          type: array
+          items: { type: string }
+
+    IndexReindexResponse:
+      type: object
+      required: [ok, queued]
+      properties:
+        ok: { type: boolean }
+        queued: { type: integer }
+
+    RunCreateRequest:
+      type: object
+      required: [task, provider]
+      properties:
+        task: { type: string }
+        mode: { type: string, enum: [fast, balanced, thorough], default: balanced }
+        strict: { type: boolean, default: true }
+        citations: { type: boolean, default: true }
+        stream: { type: boolean, default: true }
+        provider:
+          type: object
+          required: [type, model]
+          properties:
+            type: { type: string, enum: [local_cli, hf, openai_compat, custom] }
+            model: { type: string }
+            endpoint: { type: string, nullable: true }
+            preset_name: { type: string, nullable: true }
+        pins:
+          type: object
+          properties:
+            chunk_ids:
+              type: array
+              items: { type: string }
+            exclude_chunk_ids:
+              type: array
+              items: { type: string }
+
+    RunCreateResponse:
+      type: object
+      required: [run_id, status, stream_url]
+      properties:
+        run_id: { type: string }
+        status: { type: string }
+        stream_url: { type: string }
+
+    RunSummary:
+      type: object
+      required: [id, task, mode, strict, citations, provider, model, status, created_at_ms]
+      properties:
+        id: { type: string }
+        task: { type: string }
+        mode: { type: string }
+        strict: { type: boolean }
+        citations: { type: boolean }
+        provider: { type: string }
+        model: { type: string }
+        endpoint: { type: string, nullable: true }
+        status: { type: string }
+        created_at_ms: { type: integer }
+        completed_at_ms: { type: integer, nullable: true }
+
+    RunOutput:
+      type: object
+      required: [format, content]
+      properties:
+        format: { type: string, enum: [markdown, text, json] }
+        content: { type: string }
+
+    RunGetResponse:
+      type: object
+      required: [run]
+      properties:
+        run: { $ref: "#/components/schemas/RunSummary" }
+        output: { $ref: "#/components/schemas/RunOutput" }
+
+    RunsListResponse:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/RunSummary" }
+        next_cursor: { type: string, nullable: true }
+
+    RunStep:
+      type: object
+      required: [seq, stage, detail, created_at_ms]
+      properties:
+        seq: { type: integer }
+        stage: { type: string }
+        detail: { type: string }
+        created_at_ms: { type: integer }
+
+    RunStepsResponse:
+      type: object
+      required: [steps]
+      properties:
+        steps:
+          type: array
+          items: { $ref: "#/components/schemas/RunStep" }
+
+    RunEvidenceItem:
+      type: object
+      required: [id, chunk_id, snippet, pinned, excluded]
+      properties:
+        id: { type: string }
+        chunk_id: { type: string }
+        rank: { type: number, nullable: true }
+        snippet: { type: string }
+        pinned: { type: boolean }
+        excluded: { type: boolean }
+
+    RunEvidenceResponse:
+      type: object
+      required: [evidence]
+      properties:
+        evidence:
+          type: array
+          items: { $ref: "#/components/schemas/RunEvidenceItem" }
+
+paths:
+  /v1/health:
+    get:
+      tags: [Health]
+      summary: Health check
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthResponse" }
+
+  /v1/auth/register:
+    post:
+      tags: [Auth]
+      summary: Register local user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RegisterRequest" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user]
+                properties:
+                  user: { $ref: "#/components/schemas/User" }
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginRequest" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoginResponse" }
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /v1/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Logout
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OkResponse" }
+
+  /v1/auth/me:
+    get:
+      tags: [Auth]
+      summary: Current user
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MeResponse" }
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /v1/settings:
+    get:
+      tags: [Settings]
+      summary: Get settings
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settings" }
+    put:
+      tags: [Settings]
+      summary: Update settings
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Settings" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OkResponse" }
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /v1/library/documents:
+    get:
+      tags: [Library]
+      summary: List documents
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: q
+          schema: { type: string }
+        - in: query
+          name: kind
+          schema: { type: string }
+        - in: query
+          name: tag
+          schema: { type: string }
+        - in: query
+          name: folder
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 50 }
+        - in: query
+          name: cursor
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DocumentsListResponse" }
+
+  /v1/library/tags:
+    get:
+      tags: [Library]
+      summary: List tags with counts
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TagsListResponse" }
+
+  /v1/library/upload:
+    post:
+      tags: [Library]
+      summary: Upload one or more files
+      description: Multipart upload. Server stores file(s) locally and creates document records.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                files:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+                folder:
+                  type: string
+                tags:
+                  type: string
+                  description: JSON array encoded as string, e.g. ["policy","billing"].
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [created]
+                properties:
+                  created:
+                    type: array
+                    items: { $ref: "#/components/schemas/DocumentItem" }
+        "400":
+          description: Upload failed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /v1/library/documents/{doc_id}:
+    get:
+      tags: [Library]
+      summary: Get a document
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: doc_id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DocumentGetResponse" }
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+    delete:
+      tags: [Library]
+      summary: Delete a document (and its chunks)
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: doc_id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OkResponse" }
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /v1/library/documents/{doc_id}/tags:
+    post:
+      tags: [Library]
+      summary: Add tags to a document
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: doc_id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [add]
+              properties:
+                add:
+                  type: array
+                  items: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TagsUpdateResponse" }
+
+    delete:
+      tags: [Library]
+      summary: Remove tags from a document
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: doc_id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [remove]
+              properties:
+                remove:
+                  type: array
+                  items: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TagsUpdateResponse" }
+
+  /v1/index/status:
+    get:
+      tags: [Index]
+      summary: Get indexing status
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IndexStatusResponse" }
+
+  /v1/index/sync:
+    post:
+      tags: [Index]
+      summary: Scan folders and enqueue indexing
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/IndexSyncRequest" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IndexSyncResponse" }
+        "409":
+          description: Index busy
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /v1/index/reindex:
+    post:
+      tags: [Index]
+      summary: Force reindex specific documents
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/IndexReindexRequest" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IndexReindexResponse" }
+
+  /v1/search:
+    post:
+      tags: [Search]
+      summary: Full-text search over chunks
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SearchRequest" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SearchResponse" }
+        "409":
+          description: FTS not ready
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /v1/read:
+    post:
+      tags: [Search]
+      summary: Read a byte range from a document (text extraction)
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReadRequest" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReadResponse" }
+        "400":
+          description: Invalid range
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /v1/runs:
+    post:
+      tags: [Runs]
+      summary: Start a run
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RunCreateRequest" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RunCreateResponse" }
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+    get:
+      tags: [Runs]
+      summary: List runs (history)
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, default: 50 }
+        - in: query
+          name: cursor
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RunsListResponse" }
+
+  /v1/runs/{run_id}:
+    get:
+      tags: [Runs]
+      summary: Get run + latest output
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: run_id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RunGetResponse" }
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /v1/runs/{run_id}/steps:
+    get:
+      tags: [Runs]
+      summary: Get run trace steps
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: run_id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RunStepsResponse" }
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /v1/runs/{run_id}/evidence:
+    get:
+      tags: [Runs]
+      summary: Get run evidence list
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: run_id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RunEvidenceResponse" }
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /v1/runs/{run_id}/events:
+    get:
+      tags: [Runs]
+      summary: SSE stream of run events
+      description: |
+        Server-Sent Events stream. Events include: step, evidence, output_delta, output_final, done, error.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: run_id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: SSE stream
+          content:
+            text/event-stream:
+              schema:
+                type: string

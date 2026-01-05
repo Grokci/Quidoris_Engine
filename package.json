@@ -1,0 +1,17 @@
+{
+  "name": "quidoris-engine",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "description": "Quidoris Engine \u2014 RLM harness/runtime with external-doc environment + SQLite FTS5 + async/batched recursive subcalls (Bun)",
+  "license": "MIT",
+  "scripts": {
+    "start": "bun run quidoris-engine.ts",
+    "dev": "bun run --watch quidoris-engine.ts",
+    "ui:dev": "cd ui && bun install && bun run dev",
+    "ui:build": "cd ui && bun install && bun run build",
+    "ui:launch": "bun run src/launcher.ts",
+    "daemon": "bun run quidoris-engine.ts daemon --port 8787",
+    "test": "bun test"
+  }
+}
