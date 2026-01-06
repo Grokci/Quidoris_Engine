@@ -41,18 +41,32 @@ Instead of pasting an ever-growing history + all documents into the model input,
 
 ## Mermaid flowchart
 
-```mermaid
-flowchart TD
-  U[User Task] --> H[Quidoris Engine]
-  H -->|scan + incremental index| DB[(rlm_index.sqlite<br/>FTS5 + metadata)]
-  H -->|stdin prompt| LLM[LLM Backend<br/>CLI-agnostic]
-  LLM -->|outputs REPL code blocks| H
-  H -->|exec REPL| ENV[Environment<br/>context + doc library]
-  ENV -->|search/read| DB
-  ENV -->|evidence snippets| H
-  H -->|async/batched subcalls: llm_query_many_*| LLM
-  LLM -->|FINAL(...)| H
-  H --> OUT[Final Answer<br/>+ Completion Phrase]
+```
+## ASCIIFlow-style diagram (Unicode box drawing)
+
+```text
+┌──────────────┐                         ┌───────────────────────────┐
+│   User Task   │ ──────── task ───────▶  │       Quidoris Engine      │ ───────▶ ┌──────────────────────────┐
+└──────────────┘                         │   (orchestrator/runtime)   │          │ Final Answer +            │
+                                         └───────────┬───────┬───────┘          │ Completion Phrase         │
+                                                     │       │                  └──────────────────────────┘
+                               scan + incremental     │       │ stdin prompt
+                               index (FTS5)           │       │ async/batched subcalls
+                                                     ▼       ▼
+                                         ┌────────────────┐   ┌──────────────────────────┐
+                                         │ rlm_index.sqlite │   │       LLM Backend         │
+                                         │ FTS5 + metadata  │   │      (CLI-agnostic)       │
+                                         └───────┬────────┘   └──────────┬───────────────┘
+                                                 ▲                       │
+                                    search/read  │                       │ outputs REPL code blocks
+                                                 │                       │ + FINAL(...)
+                                                 │                       ▼
+                                         ┌───────┴─────────────────────────────────────────┐
+                                         │               Environment (REPL)                 │
+                                         │            context + doc library                 │
+                                         └───────────────────────┬─────────────────────────┘
+                                                                 │
+                                                   evidence snippets (to Engine)
 ```
 
 ## CLI
