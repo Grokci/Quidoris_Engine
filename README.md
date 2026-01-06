@@ -50,7 +50,7 @@ flowchart TD
   H -->|exec REPL| ENV[Environment<br/>context + doc library]
   ENV -->|search/read| DB
   ENV -->|evidence snippets| H
-  H -->|async/batched subcalls (llm_query_many_*)| LLM
+  H -->|async/batched subcalls: llm_query_many_*| LLM
   LLM -->|FINAL(...)| H
   H --> OUT[Final Answer<br/>+ Completion Phrase]
 ```
