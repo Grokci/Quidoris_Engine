@@ -39,7 +39,7 @@ Instead of pasting an ever-growing history + all documents into the model input,
 3) Encourages **batched/async** subcalls over selected evidence.
 4) Requires an explicit `FINAL(...)` or `FINAL_VAR(...)` to finish.
 
-## Mermaid flowchart
+## Aschiiflow flowchart
 
 ```
 ## ASCIIFlow-style diagram (Unicode box drawing)
